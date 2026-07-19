@@ -41,6 +41,11 @@ Key decisions:
 
 ## Modules
 
+- `application-service-outbox-example/` — how the existing application service publishes
+  ApplicationApproved to SNS via a transactional outbox (Spring Modulith event
+  publication registry + the Spring Cloud AWS SNS externalizer). The approval row and
+  the outbox row commit in one transaction; SNS publish happens after commit and is
+  re-driven on restart if it fails.
 - `partner-delivery-service/` — the delivery router, Inbox API, and channel implementations.
   - `k8s/` — Deployment (IRSA service account) and Istio edge config: the ingress gateway
     validates the partner's OAuth2 JWT and stamps the validated `client_id` into

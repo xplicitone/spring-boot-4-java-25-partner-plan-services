@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: application-service-outbox-example
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/applications}
+    username: ${DB_USERNAME:applications}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: validate # real service: Flyway owns partner_application AND event_publication
+    open-in-view: false
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:us-east-1}
+  modulith:
+    events:
+      # If the pod dies between commit and SNS publish, re-publish the
+      # incomplete outbox rows on startup instead of losing them.
+      republish-outstanding-events-on-restart: true
+      completion-mode: update
+
+events:
+  # terraform output -raw application_events_topic_arn
+  application-events-topic-arn: ${APPLICATION_EVENTS_TOPIC_ARN:arn:aws:sns:us-east-1:000000000000:dev-application-events}
