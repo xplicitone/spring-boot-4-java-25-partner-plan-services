@@ -1,5 +1,6 @@
 package com.partnerplan.delivery.inbox;
 
+import com.partnerplan.delivery.config.DeliveryProperties;
 import com.partnerplan.delivery.dispatch.DeliveryService;
 import com.partnerplan.delivery.domain.Delivery;
 import java.util.List;
@@ -26,22 +27,24 @@ import org.springframework.web.bind.annotation.RestController;
 public class InboxController {
 
     private final DeliveryService deliveryService;
+    private final DeliveryProperties properties;
 
-    public InboxController(DeliveryService deliveryService) {
+    public InboxController(DeliveryService deliveryService, DeliveryProperties properties) {
         this.deliveryService = deliveryService;
+        this.properties = properties;
     }
 
     @GetMapping
     public List<InboxDeliveryResponse> pending(@RequestHeader("X-Partner-Id") String partnerId) {
         return deliveryService.pendingForPartner(partnerId).stream()
-                .map(InboxDeliveryResponse::from)
+                .map(d -> InboxDeliveryResponse.from(d, properties))
                 .toList();
     }
 
     @PostMapping("/{deliveryId}/ack")
     public InboxDeliveryResponse acknowledge(@RequestHeader("X-Partner-Id") String partnerId,
                                              @PathVariable UUID deliveryId) {
-        return InboxDeliveryResponse.from(deliveryService.acknowledge(partnerId, deliveryId));
+        return InboxDeliveryResponse.from(deliveryService.acknowledge(partnerId, deliveryId), properties);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -55,12 +58,14 @@ public class InboxController {
             String applicationId,
             String eventType,
             String status,
-            String createdAt) {
+            String createdAt,
+            String accountFetchUrl) {
 
-        static InboxDeliveryResponse from(Delivery d) {
+        static InboxDeliveryResponse from(Delivery d, DeliveryProperties properties) {
             return new InboxDeliveryResponse(
                     d.getId(), d.getApplicationId(), d.getEventType(),
-                    d.getStatus().name(), d.getCreatedAt().toString());
+                    d.getStatus().name(), d.getCreatedAt().toString(),
+                    properties.accountFetchBaseUrl() + "/applications/" + d.getApplicationId() + "/account");
         }
     }
 }

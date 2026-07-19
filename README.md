@@ -54,6 +54,9 @@ Key decisions:
 Infra (SNS topic, internal queue, per-partner queues, IAM) lives in
 `spring-boot-4-java-25-partner-plan-infra`.
 
+Partner-facing docs: [docs/partner-integration-non-aws.md](docs/partner-integration-non-aws.md)
+— what a non-AWS partner implements against the Inbox API (poll → fetch → ack).
+
 ## Build
 
 ```

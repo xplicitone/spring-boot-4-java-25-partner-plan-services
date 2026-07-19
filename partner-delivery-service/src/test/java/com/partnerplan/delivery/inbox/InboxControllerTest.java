@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.partnerplan.delivery.config.DeliveryProperties;
 import com.partnerplan.delivery.dispatch.DeliveryService;
 import com.partnerplan.delivery.domain.ChannelType;
 import com.partnerplan.delivery.domain.Delivery;
@@ -31,7 +32,9 @@ class InboxControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new InboxController(deliveryService)).build();
+        DeliveryProperties properties =
+                new DeliveryProperties("partner-delivery-inbound", "https://partners.example.com/api");
+        mockMvc = MockMvcBuilders.standaloneSetup(new InboxController(deliveryService, properties)).build();
     }
 
     private Delivery dispatchedDelivery() {
@@ -47,7 +50,9 @@ class InboxControllerTest {
         mockMvc.perform(get("/inbox/deliveries").header("X-Partner-Id", "acme"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].applicationId").value("app-1"))
-                .andExpect(jsonPath("$[0].status").value("DISPATCHED"));
+                .andExpect(jsonPath("$[0].status").value("DISPATCHED"))
+                .andExpect(jsonPath("$[0].accountFetchUrl")
+                        .value("https://partners.example.com/api/applications/app-1/account"));
     }
 
     @Test
