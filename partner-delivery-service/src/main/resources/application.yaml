@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: partner-delivery-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/partner_delivery}
+    username: ${DB_USERNAME:partner_delivery}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:us-east-1}
+
+delivery:
+  inbound-queue: ${DELIVERY_INBOUND_QUEUE:partner-delivery-inbound}
+  account-fetch-base-url: ${ACCOUNT_FETCH_BASE_URL:https://partners.example.com/api}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true

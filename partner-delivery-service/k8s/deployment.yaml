@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: partner-delivery-service
+  annotations:
+    # IRSA: role created in the infra repo grants sqs:SendMessage to partner queues
+    # and consume rights on the internal inbound queue.
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/partner-delivery-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: partner-delivery-service
+  labels:
+    app: partner-delivery-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: partner-delivery-service
+  template:
+    metadata:
+      labels:
+        app: partner-delivery-service
+    spec:
+      serviceAccountName: partner-delivery-service
+      containers:
+        - name: app
+          image: REGISTRY/partner-delivery-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DELIVERY_INBOUND_QUEUE
+              value: partner-delivery-inbound
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: partner-delivery-service
+spec:
+  selector:
+    app: partner-delivery-service
+  ports:
+    - port: 80
+      targetPort: 8080

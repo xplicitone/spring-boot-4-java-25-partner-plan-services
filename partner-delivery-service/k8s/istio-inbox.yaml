@@ -1,0 +1,55 @@
+# Partner-facing edge for the Inbox API. The gateway authenticates the partner's
+# OAuth2 client-credentials JWT; the AuthorizationPolicy maps the validated client_id
+# claim onto the X-Partner-Id header the service trusts.
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: partner-inbox-jwt
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  jwtRules:
+    - issuer: https://auth.example.com/
+      jwksUri: https://auth.example.com/.well-known/jwks.json
+      outputClaimToHeaders:
+        - header: X-Partner-Id
+          claim: client_id
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: partner-inbox-require-jwt
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            paths: ["/inbox/*"]
+      from:
+        - source:
+            requestPrincipals: ["*"]
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: partner-inbox
+spec:
+  hosts:
+    - partners.example.com
+  gateways:
+    - istio-system/partner-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /inbox/
+      route:
+        - destination:
+            host: partner-delivery-service
+            port:
+              number: 80
