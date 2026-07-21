@@ -57,6 +57,11 @@ Infra (SNS topic, internal queue, per-partner queues, IAM) lives in
 Partner-facing docs: [docs/partner-integration-non-aws.md](docs/partner-integration-non-aws.md)
 — what a non-AWS partner implements against the Inbox API (poll → fetch → ack).
 
+Planned change: [docs/eventbridge-migration.md](docs/eventbridge-migration.md) — how the
+internal event backbone would move from SNS to the org's EventBridge pattern, what changes
+in each repo, and the open questions for the architects. Not adopted; `main` stays on SNS
+until EventBridge is ready.
+
 ## Build
 
 ```
