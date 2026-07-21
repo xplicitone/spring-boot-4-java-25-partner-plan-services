@@ -58,9 +58,9 @@ Partner-facing docs: [docs/partner-integration-non-aws.md](docs/partner-integrat
 — what a non-AWS partner implements against the Inbox API (poll → fetch → ack).
 
 Planned change: [docs/eventbridge-migration.md](docs/eventbridge-migration.md) — how the
-internal event backbone would move from SNS to the org's EventBridge pattern, what changes
-in each repo, and the open questions for the architects. Not adopted; `main` stays on SNS
-until EventBridge is ready.
+internal event backbone would move from SNS to the org's EventBridge pattern (diagram,
+step-by-step flow, cross-account IAM, what changes in each repo, open questions for the
+architects). Not adopted; `main` stays on SNS until EventBridge is ready.
 
 ## Build
 

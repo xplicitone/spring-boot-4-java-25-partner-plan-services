@@ -20,6 +20,94 @@ Architects are standardizing internal eventing on EventBridge:
 Separately, partner-facing APIs may move to **Mulesoft Flex Gateway** (API management),
 which is only relevant to our Inbox API edge, not to any of the eventing.
 
+## New flow — diagram
+
+```
+ Application team's AWS account                    Our AWS account
+┌───────────────────────────────────┐              ┌──────────────────────────────────────────┐
+│                                    │              │                                            │
+│  application service               │              │                                            │
+│    approve(applicationId)          │              │                                            │
+│      │ same DB transaction:        │              │                                            │
+│      │  1. application → APPROVED  │              │                                            │
+│      │  2. event_publication row   │              │                                            │
+│      ▼ (Spring Modulith outbox)    │              │                                            │
+│  ┌─────────────────────┐           │              │                                            │
+│  │ after commit:        │           │              │                                            │
+│  │ PutEvents            │───────────┼──────────┐   │                                            │
+│  │  source: com.app     │           │          │   │                                            │
+│  │  detail-type:         │           │          │   │                                            │
+│  │   ApplicationApproved │           │          │   │                                            │
+│  │  detail: {claim-check}│           │          │   │                                            │
+│  └─────────────────────┘           │          │   │                                            │
+│           │                        │          │   │                                            │
+│           ▼                        │          │   │                                            │
+│  ┌─────────────────────┐           │          │   │                                            │
+│  │  EventBridge bus      │◀─────────┼──────────┘   │                                            │
+│  │  (owned by app team) │           │              │                                            │
+│  └──────────┬───────────┘           │              │                                            │
+│             │ rule: match           │              │                                            │
+│             │ detail-type =         │              │                                            │
+│             │ ApplicationApproved   │              │                                            │
+│             │ (added via OUR MR     │              │                                            │
+│             │  to the app team's    │              │                                            │
+│             │  rules Terraform)     │              │                                            │
+│             ▼                       │              │                                            │
+│      target: cross-account          │              │                                            │
+│      SQS put, resource policy       │              │                                            │
+│      grants events.amazonaws.com    │              │                                            │
+│      from this bus's rule ARN  ─────┼──────────────┼──▶ SQS: partner-delivery-inbound (+ DLQ)   │
+│                                    │              │         │                                    │
+└───────────────────────────────────┘              │         ▼                                    │
+                                                     │  partner-delivery-service                    │
+                                                     │   (@SqsListener, unchanged)                   │
+                                                     │    │ creates durable Delivery record          │
+                                                     │    │ routes by PartnerChannelConfig            │
+                                                     │  ┌─┼───────────────┬───────────────────┐      │
+                                                     │  ▼ ▼               ▼                   ▼      │
+                                                     │ SQS channel   INBOX channel      LEGACY_REST   │
+                                                     │ (unchanged)   (unchanged)        (unchanged)   │
+                                                     └──────────────────────────────────────────┘
+```
+
+The only segment that's new is everything left of `partner-delivery-inbound`. Once the
+message lands in our queue, this is byte-for-byte the same pipeline as the SNS version.
+
+## Step-by-step walkthrough
+
+1. **Approval commits.** `ApprovalService.approve()` runs in one transaction: the
+   `partner_application` row flips to `APPROVED`, and Spring Modulith's event
+   publication registry inserts the `ApplicationApproved` event into `event_publication`
+   — same as today. Nothing here changes.
+2. **Outbox publishes after commit.** Instead of the SNS externalizer, the completion
+   step issues `PutEvents` against the application team's own EventBridge bus (in
+   *their* AWS account, not ours). If the call fails or the pod dies first, the
+   publication record stays incomplete and is retried on restart — the same
+   at-least-once guarantee as the SNS path.
+3. **A rule on their bus matches our event.** The rule (`detail-type = ApplicationApproved`,
+   `source = com.<app-team>.applications` or whatever they standardize on) is defined in
+   the app team's rules Terraform, in the separate file their MR process expects. **We
+   author that rule and target as an MR against their repo** — we don't own or apply it.
+4. **The rule's target is our SQS queue, cross-account.** Because their bus and our
+   queue are in different AWS accounts, the target needs: (a) an IAM role on their side
+   with `sqs:SendMessage` to our queue ARN — either supplied by them or created by the
+   rule module — and (b) a resource policy on **our** queue granting
+   `events.amazonaws.com` as principal, scoped by `aws:SourceArn` to their rule's ARN
+   (this replaces the `sns.amazonaws.com` statement in today's queue policy).
+5. **Message lands in `partner-delivery-inbound`.** From here nothing changes: the
+   delivery service's `@SqsListener` consumes it, dedupes, creates the `Delivery` row,
+   and dispatches via `PartnerChannelConfig` exactly as it does today.
+
+## Ownership boundary this introduces
+
+Today we own both ends: our infra repo has the SNS topic *and* the subscription. Under
+EventBridge, **we no longer own the publish side at all** — the bus and the rule live in
+the app team's Terraform, and our only artifact is the target-side queue policy plus the
+MR we submit to them. That's an intentional tradeoff of the org pattern (governance and
+auditability of "who can route what" sits with the publisher) but it means **our queue's
+first message can only ever arrive after their MR is reviewed and merged** — factor that
+review latency into any cutover timeline.
+
 ## Why this fits our design
 
 Our delivery pipeline is deliberately layered so the transport can change without
@@ -104,6 +192,15 @@ Bring these to the meeting:
    north-south partner edge, or *front* it (partner → Flex Gateway → Istio ingress →
    service)? Determines whether `k8s/istio-inbox.yaml` is deleted or just loses its
    JWT-validation responsibility.
+7. **Cross-account target IAM** — for a rule whose target is a queue in *our* account
+   (different from the publisher's account), does their rules module provision the
+   cross-account IAM role/resource-policy pairing itself, or is that our responsibility
+   to add on the queue side? Confirm the exact principal/condition shape expected
+   (assumed `events.amazonaws.com` + `aws:SourceArn` = rule ARN in this doc's diagram —
+   verify against their module).
+8. **MR review SLA.** Since the publisher's rule must merge before our queue receives
+   anything, what's the expected turnaround for a subscription MR? Needed for cutover
+   timelines.
 
 Points to raise **from us** in the meeting:
 
